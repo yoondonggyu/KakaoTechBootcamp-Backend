@@ -19,3 +19,5 @@ def create_json_response(status_code: int, message: str, data=None) -> JSONRespo
         content={"message": message, "data": data}
     )
 
+
+

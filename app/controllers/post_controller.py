@@ -1,7 +1,7 @@
 import os
 import uuid
 from app.core.validators import validate_title
-from app.core.exceptions import bad_request, not_found, forbidden, unprocessable
+from app.core.exceptions import bad_request, not_found, forbidden, unprocessable, unauthorized
 from app.models.memory import POSTS, COMMENTS, COUNTERS, LIKES, USERS, Post
 from app.schemas import PostCreateReq, PostUpdateReq
 
@@ -11,6 +11,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def create_post_controller(req: PostCreateReq, user_id: int):
     """게시글 작성 컨트롤러"""
+    if user_id not in USERS:
+        raise unauthorized()
+
     if not req.title or not req.content:
         raise unprocessable("missing_fields", {"required": ["title", "content"]})
     
@@ -122,6 +125,11 @@ def get_post_controller(post_id: int, user_id: int = None):
 
 def update_post_controller(post_id: int, req: PostUpdateReq, user_id: int):
     """게시글 수정 컨트롤러"""
+    if not req or all(
+        field is None for field in (req.title, req.content, req.image_url)
+    ):
+        raise bad_request("invalid_request")
+
     post = POSTS.get(post_id)
     if not post:
         raise not_found("post_not_found")

@@ -2,7 +2,7 @@ import os
 import uuid
 from app.core.validators import validate_nickname
 from app.core.exceptions import bad_request, conflict, unauthorized
-from app.models.memory import USERS, USERS_BY_NICK, USERS_BY_EMAIL
+from app.models.memory import USERS, USERS_BY_NICK, USERS_BY_EMAIL, POSTS, COMMENTS, LIKES
 from app.schemas import NicknamePatchReq, PasswordUpdateReq
 
 UPLOAD_DIR = os.path.abspath("./uploads")
@@ -62,7 +62,29 @@ def delete_user_controller(user_id: int):
     if not u:
         raise unauthorized()
     
-    # 관련 데이터 정리
+    # 관련 게시글 삭제 및 정리
+    posts_to_delete = [pid for pid, post in POSTS.items() if post.user_id == user_id]
+    for pid in posts_to_delete:
+        comment_ids = [cid for cid, c in COMMENTS.items() if c.post_id == pid]
+        for cid in comment_ids:
+            COMMENTS.pop(cid, None)
+        LIKES.pop(pid, None)
+        POSTS.pop(pid, None)
+
+    # 사용자가 남긴 댓글 제거
+    for cid, comment in list(COMMENTS.items()):
+        if comment.user_id == user_id:
+            COMMENTS.pop(cid, None)
+
+    # 사용자가 누른 좋아요 제거
+    for pid, user_set in LIKES.items():
+        if user_id in user_set:
+            user_set.remove(user_id)
+            post = POSTS.get(pid)
+            if post:
+                post.like_count = len(user_set)
+
+    # 사용자 인덱스 정리
     USERS_BY_EMAIL.pop(u.email, None)
     USERS_BY_NICK.pop(u.nickname, None)
     USERS.pop(user_id, None)

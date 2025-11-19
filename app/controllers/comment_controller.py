@@ -1,10 +1,13 @@
-from app.core.exceptions import not_found, forbidden, bad_request
+from app.core.exceptions import not_found, forbidden, bad_request, unauthorized
 from app.models.memory import POSTS, COMMENTS, COUNTERS, USERS, Comment
 from app.schemas import CommentCreateReq, CommentUpdateReq
 
 
 def create_comment_controller(post_id: int, req: CommentCreateReq, user_id: int):
     """댓글 작성 컨트롤러"""
+    if user_id not in USERS:
+        raise unauthorized()
+
     if post_id not in POSTS:
         raise not_found("post_not_found")
     
