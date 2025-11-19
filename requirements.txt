@@ -1,0 +1,17 @@
+# Python 3.13.5
+
+# FastAPI 및 웹 프레임워크
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.3
+python-multipart>=0.0.6
+
+# 이미지 처리 (파일 업로드용)
+pillow>=10.0.0
+
+# 유틸리티
+python-dotenv>=1.0.0
+
+# 개발 도구 (선택)
+# pytest>=7.4.0
+# httpx>=0.25.0
