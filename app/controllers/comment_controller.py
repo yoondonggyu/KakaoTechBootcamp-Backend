@@ -1,10 +1,11 @@
 from app.core.exceptions import not_found, forbidden, bad_request, unauthorized
 from app.models.memory import POSTS, COMMENTS, COUNTERS, USERS, Comment
 from app.schemas import CommentCreateReq, CommentUpdateReq
+from app.services.model_client import analyze_sentiment
 
 
-def create_comment_controller(post_id: int, req: CommentCreateReq, user_id: int):
-    """댓글 작성 컨트롤러"""
+async def create_comment_controller(post_id: int, req: CommentCreateReq, user_id: int):
+    """댓글 작성 컨트롤러 + 감성 분석"""
     if user_id not in USERS:
         raise unauthorized()
 
@@ -25,7 +26,32 @@ def create_comment_controller(post_id: int, req: CommentCreateReq, user_id: int)
     )
     
     COMMENTS[cid] = comment
-    return {"comment_id": cid}
+    
+    # 🎯 Model API 호출 (감성 분석) - 비동기로 처리
+    sentiment_result = None
+    try:
+        sentiment = await analyze_sentiment(req.content, explain=False)
+        if sentiment:
+            label = sentiment.get("label", "unknown")
+            confidence = sentiment.get("confidence", 0)
+            sentiment_result = {
+                "label": label,
+                "confidence": confidence
+            }
+            print(f"✅ 댓글 감성 분석: {label} (신뢰도: {confidence:.2%}) - 댓글 ID: {cid}")
+            
+            # 부정적인 댓글 감지 시 로그
+            if label == "negative" and confidence > 0.7:
+                print(f"⚠️ 부정적인 댓글이 감지되었습니다. (댓글 ID: {cid}, 신뢰도: {confidence:.2%})")
+    except Exception as e:
+        # Model API 실패해도 댓글 작성은 성공 처리
+        print(f"⚠️ 감성 분석 실패 (댓글 작성은 성공): {e}")
+    
+    result = {"comment_id": cid}
+    if sentiment_result:
+        result["sentiment"] = sentiment_result  # Model API 결과 포함
+    
+    return result
 
 
 def get_comments_controller(post_id: int):

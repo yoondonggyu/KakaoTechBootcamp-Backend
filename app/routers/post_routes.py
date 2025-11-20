@@ -58,8 +58,8 @@ async def inc_view(post_id: int):
 
 @router.post("/posts/upload")
 async def upload_post_image(file: UploadFile = File(...)):
-    """게시글 이미지 업로드 API"""
+    """게시글 이미지 업로드 API (이미지 분류 포함)"""
     file_data = await file.read()
     filename = file.filename or "unknown"
-    data = post_controller.upload_post_image_controller(file.content_type or "", file_data, filename)
+    data = await post_controller.upload_post_image_controller(file.content_type or "", file_data, filename)
     return {"message": "upload_success", "data": data}

@@ -15,8 +15,8 @@ async def get_comments(post_id: int):
 
 @router.post("/posts/{post_id}/comments", status_code=status.HTTP_201_CREATED)
 async def create_comment(post_id: int, req: CommentCreateReq, user_id: int = Depends(get_current_user_id)):
-    """댓글 작성 API"""
-    data = comment_controller.create_comment_controller(post_id, req, user_id)
+    """댓글 작성 API (감성 분석 포함)"""
+    data = await comment_controller.create_comment_controller(post_id, req, user_id)
     return {"message": "create_comment_success", "data": data}
 
 

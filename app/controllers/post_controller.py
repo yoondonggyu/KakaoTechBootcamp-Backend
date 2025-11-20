@@ -4,6 +4,7 @@ from app.core.validators import validate_title
 from app.core.exceptions import bad_request, not_found, forbidden, unprocessable, unauthorized
 from app.models.memory import POSTS, COMMENTS, COUNTERS, LIKES, USERS, Post
 from app.schemas import PostCreateReq, PostUpdateReq
+from app.services.model_client import predict_image
 
 UPLOAD_DIR = os.path.abspath("./uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -208,8 +209,8 @@ def increment_view_controller(post_id: int):
     }
 
 
-def upload_post_image_controller(file_content_type: str, file_data: bytes, filename: str):
-    """게시글 이미지 업로드 컨트롤러"""
+async def upload_post_image_controller(file_content_type: str, file_data: bytes, filename: str):
+    """게시글 이미지 업로드 컨트롤러 + 이미지 분류"""
     from app.core.exceptions import payload_too_large
     
     if file_content_type not in ("image/jpeg", "image/png", "image/jpg"):
@@ -225,5 +226,36 @@ def upload_post_image_controller(file_content_type: str, file_data: bytes, filen
         f.write(file_data)
     
     url = f"https://cdn.example.com/{name}"
-    return {"image_url": url}
+    
+    # 🎯 Model API 호출 (이미지 분류) - 비동기로 처리
+    prediction_result = None
+    prediction_error = None
+    try:
+        prediction = await predict_image(file_data, filename)
+        if prediction:
+            class_name = prediction.get("class_name", "Unknown")
+            confidence = prediction.get("confidence_score", 0)
+            prediction_result = {
+                "class_name": class_name,
+                "confidence_score": confidence
+            }
+            print(f"✅ 이미지 분류 결과: {class_name} (신뢰도: {confidence:.2%})")
+        else:
+            from app.services.model_client import get_model_api_base_url
+            current_url = get_model_api_base_url()
+            current_port = current_url.split(":")[-1].split("/")[0]
+            prediction_error = f"Model API가 None을 반환했습니다. Model API 서버(포트 {current_port})가 실행 중인지 확인하세요."
+            print(f"⚠️ {prediction_error}")
+    except Exception as e:
+        # Model API 실패해도 업로드는 성공 처리
+        prediction_error = f"Model API 호출 실패: {str(e)}"
+        print(f"⚠️ 이미지 분류 실패 (업로드는 성공): {e}")
+    
+    result = {"image_url": url}
+    if prediction_result:
+        result["prediction"] = prediction_result  # Model API 결과 포함
+    elif prediction_error:
+        result["prediction_error"] = prediction_error  # 에러 정보 포함 (디버깅용)
+    
+    return result
 
