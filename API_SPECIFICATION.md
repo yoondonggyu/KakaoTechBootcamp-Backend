@@ -186,6 +186,82 @@
 
 ## 게시글 (Post)
 
+### 게시글 목록 조회
+- **Method**: `GET`
+- **Endpoint**: `/api/posts`
+- **Query Parameters**:
+  - `page`: int (기본값: 1, 최소: 1) - 페이지 번호
+  - `limit`: int (기본값: 10, 최소: 1, 최대: 100) - 페이지당 게시글 수
+- **Headers** (선택):
+  - `X-User-Id`: int - 로그인한 사용자 ID (좋아요 상태 확인용)
+- **Description**: 게시글 목록을 페이지네이션으로 조회합니다. 최신순(ID 역순)으로 정렬됩니다.
+- **Success Response (200)**:
+```json
+{
+  "message": "get_posts_success",
+  "data": {
+    "posts": [
+      {
+        "post_id": 1,
+        "user_id": 1,
+        "nickname": "작성자닉네임",
+        "title": "게시글 제목",
+        "content": "게시글 내용",
+        "image_url": "https://cdn.example.com/image.jpg",
+        "like_count": 5,
+        "view_count": 100,
+        "comment_count": 3,
+        "liked": false
+      }
+    ],
+    "total": 50,
+    "page": 1,
+    "limit": 10
+  }
+}
+```
+- **Error Responses**: 없음 (항상 성공)
+
+---
+
+### 게시글 상세 조회
+- **Method**: `GET`
+- **Endpoint**: `/api/posts/{post_id}`
+- **Path Parameters**:
+  - `post_id`: int - 게시글 ID
+- **Headers** (선택):
+  - `X-User-Id`: int - 로그인한 사용자 ID (좋아요 상태 확인용)
+- **Description**: 특정 게시글의 상세 정보와 댓글 목록을 조회합니다.
+- **Success Response (200)**:
+```json
+{
+  "message": "get_post_success",
+  "data": {
+    "post_id": 1,
+    "user_id": 1,
+    "nickname": "작성자닉네임",
+    "title": "게시글 제목",
+    "content": "게시글 내용",
+    "image_url": "https://cdn.example.com/image.jpg",
+    "like_count": 5,
+    "view_count": 100,
+    "liked": false,
+    "comments": [
+      {
+        "comment_id": 1,
+        "user_id": 2,
+        "nickname": "댓글작성자",
+        "content": "댓글 내용"
+      }
+    ]
+  }
+}
+```
+- **Error Responses**:
+  - `404`: `{ "message": "post_not_found", "data": null }` - 게시글을 찾을 수 없습니다.
+
+---
+
 ### 게시글 등록
 - **Method**: `POST`
 - **Endpoint**: `/api/posts`
@@ -292,7 +368,7 @@
 - **Endpoint**: `/api/posts/upload`
 - **Request**: Multipart Form-data: `{ "file": [이미지 파일] }`
 - **Description**: 이미지 업로드 버튼 클릭 시 파일을 업로드하고, 성공 시 이미지 URL을 반환한다.  
-**※ Model API 연동**: 이미지 업로드 시 자동으로 이미지 분류(강아지/고양이)가 실행되며, 분류 결과가 응답에 포함됩니다.
+**※ Model API 연동**: 이미지 업로드 시 자동으로 이미지 분류(강아지/고양이)가 실행되며, 분류 결과가 응답에 포함됩니다. Model API 서버가 응답하지 않거나 오류가 발생해도 이미지 업로드는 성공 처리됩니다.
 - **Success Response (200)**:
 ```json
 {
@@ -306,11 +382,24 @@
   }
 }
 ```
-- **Note**: `prediction` 필드는 Model API가 정상 작동할 때만 포함됩니다. Model API 서버가 응답하지 않거나 오류가 발생하면 `prediction_error` 필드가 포함될 수 있습니다.
+또는 (Model API 실패 시):
+```json
+{
+  "message": "upload_success",
+  "data": {
+    "image_url": "https://cdn.example.com/sample.jpg",
+    "prediction_error": "Model API가 None을 반환했습니다. Model API 서버(포트 8002)가 실행 중인지 확인하세요."
+  }
+}
+```
+- **Note**: 
+  - `prediction` 필드는 Model API가 정상 작동할 때만 포함됩니다.
+  - Model API 서버가 응답하지 않거나 오류가 발생하면 `prediction_error` 필드가 포함됩니다.
+  - Model API 실패 시에도 이미지 업로드는 성공 처리되므로 `image_url`은 항상 포함됩니다.
 - **Error Responses**:
-  - `400`: `{ "message": "invalid_file_type", "data": { "allowed": ["jpg","png","jpeg"] } }`
-  - `413`: `{ "message": "file_too_large", "data": { "max_size": "5MB" } }`
-  - `500`: `{ "message": "internal_server_error", "data": null }`
+  - `400`: `{ "message": "invalid_file_type", "data": { "allowed": ["jpg","png","jpeg"] } }` - jpg, png, jpeg 파일만 업로드 가능합니다.
+  - `413`: `{ "message": "file_too_large", "data": { "max_size": "5MB" } }` - 파일 크기가 너무 큽니다. (최대 5MB)
+  - `500`: `{ "message": "internal_server_error", "data": null }` - 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.
 
 ---
 
@@ -332,6 +421,33 @@
 
 ## 댓글 (Comment)
 
+### 댓글 목록 조회
+- **Method**: `GET`
+- **Endpoint**: `/api/posts/{post_id}/comments`
+- **Path Parameters**:
+  - `post_id`: int - 게시글 ID
+- **Description**: 특정 게시글의 댓글 목록을 조회합니다.
+- **Success Response (200)**:
+```json
+{
+  "message": "get_comments_success",
+  "data": {
+    "comments": [
+      {
+        "comment_id": 1,
+        "user_id": 2,
+        "nickname": "댓글작성자",
+        "content": "댓글 내용"
+      }
+    ]
+  }
+}
+```
+- **Error Responses**:
+  - `404`: `{ "message": "post_not_found", "data": null }` - 게시글을 찾을 수 없습니다.
+
+---
+
 ### 댓글 등록
 - **Method**: `POST`
 - **Endpoint**: `/api/posts/{post_id}/comments`
@@ -342,7 +458,7 @@
 }
 ```
 - **Description**: 댓글 입력 시 버튼이 활성화(ACA0EB → 7F6AEE). 입력 후 등록 버튼 클릭 시 서버로 댓글 등록 요청.  
-**※ Model API 연동**: 댓글 작성 시 자동으로 감성 분석(positive/negative)이 실행되며, 분석 결과가 응답에 포함됩니다.
+**※ Model API 연동**: 댓글 작성 시 자동으로 감성 분석(positive/negative)이 실행되며, 분석 결과가 응답에 포함됩니다. Model API 서버가 응답하지 않거나 오류가 발생해도 댓글 작성은 성공 처리됩니다.
 - **Success Response (201)**:
 ```json
 {
@@ -356,11 +472,23 @@
   }
 }
 ```
-- **Note**: `sentiment` 필드는 Model API가 정상 작동할 때만 포함됩니다. Model API 서버가 응답하지 않거나 오류가 발생하면 댓글 작성은 성공하지만 `sentiment` 필드는 포함되지 않습니다.
+또는 (Model API 실패 시):
+```json
+{
+  "message": "create_comment_success",
+  "data": {
+    "comment_id": 1
+  }
+}
+```
+- **Note**: 
+  - `sentiment` 필드는 Model API가 정상 작동할 때만 포함됩니다.
+  - Model API 서버가 응답하지 않거나 오류가 발생하면 `sentiment` 필드는 포함되지 않지만, 댓글 작성은 성공 처리됩니다.
 - **Error Responses**:
-  - `400`: `{ "message": "invalid_request", "data": null }`
-  - `401`: `{ "message": "unauthorized_user", "data": null }`
-  - `500`: `{ "message": "internal_server_error", "data": null }`
+  - `400`: `{ "message": "invalid_request", "data": null }` - 잘못된 요청입니다.
+  - `401`: `{ "message": "unauthorized_user", "data": null }` - 로그인이 필요합니다.
+  - `404`: `{ "message": "post_not_found", "data": null }` - 게시글을 찾을 수 없습니다.
+  - `500`: `{ "message": "internal_server_error", "data": null }` - 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.
 
 ---
 
