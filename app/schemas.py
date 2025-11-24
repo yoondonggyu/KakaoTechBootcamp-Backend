@@ -30,6 +30,7 @@ class PostCreateReq(BaseModel):
     title: str = Field(..., max_length=2000)
     content: str
     image_url: HttpUrl | None = None
+    board_type: str = "couple"
 
 class PostUpdateReq(BaseModel):
     title: str | None = None

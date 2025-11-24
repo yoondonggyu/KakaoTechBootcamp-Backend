@@ -16,6 +16,11 @@ class Post:
     title: str
     content: str
     image_url: str | None
+    board_type: str = "couple"  # couple, planner, private
+    tags: list[str] = field(default_factory=list)
+    summary: str | None = None
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
     like_count: int = 0
     view_count: int = 0
 

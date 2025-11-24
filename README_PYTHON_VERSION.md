@@ -117,3 +117,4 @@ pip install -r requirements.txt
 4. **`.python-version` 파일 커밋**: pyenv 등에서 자동 인식
 5. **Docker 사용 권장**: 환경 차이 최소화
 
+

@@ -1,18 +1,24 @@
 import os
 import uuid
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from app.core.validators import validate_title
 from app.core.exceptions import bad_request, not_found, forbidden, unprocessable, unauthorized
-from app.models.memory import POSTS, COMMENTS, COUNTERS, LIKES, USERS, Post
+from app.models.post import Post, PostLike, Tag
+from app.models.user import User
+from app.models.comment import Comment
 from app.schemas import PostCreateReq, PostUpdateReq
-from app.services.model_client import predict_image
+from app.services.model_client import predict_image, summarize_text, auto_tag_text, analyze_sentiment
 
 UPLOAD_DIR = os.path.abspath("./uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def create_post_controller(req: PostCreateReq, user_id: int):
+async def create_post_controller(req: PostCreateReq, user_id: int, db: Session):
     """게시글 작성 컨트롤러"""
-    if user_id not in USERS:
+    # Check user existence
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
         raise unauthorized()
 
     if not req.title or not req.content:
@@ -20,58 +26,94 @@ def create_post_controller(req: PostCreateReq, user_id: int):
     
     validate_title(req.title)
     
-    pid = COUNTERS["post"]
-    COUNTERS["post"] += 1
+    # AI 서비스 호출
+    tags_list = await auto_tag_text(req.content)
+    summary_res = await summarize_text(req.content)
+    summary = summary_res.get("summary") if summary_res else None
     
+    sentiment_res = await analyze_sentiment(req.content)
+    sentiment_score = None
+    sentiment_label = None
+    if sentiment_res:
+        sentiment_score = sentiment_res.get("confidence")
+        sentiment_label = sentiment_res.get("label")
+
+    # Handle Tags
+    db_tags = []
+    for tag_name in tags_list:
+        tag = db.query(Tag).filter(Tag.name == tag_name).first()
+        if not tag:
+            tag = Tag(name=tag_name)
+            db.add(tag)
+            db.flush() # Get ID
+        db_tags.append(tag)
+
     post = Post(
-        id=pid,
         user_id=user_id,
         title=req.title,
         content=req.content,
         image_url=str(req.image_url) if req.image_url else None,
+        board_type=req.board_type,
+        tags=db_tags,
+        summary=summary,
+        sentiment_score=sentiment_score,
+        sentiment_label=sentiment_label,
         like_count=0,
         view_count=0
     )
     
-    POSTS[pid] = post
-    return {"post_id": pid}
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    
+    return {"post_id": post.id}
 
 
-def get_posts_controller(page: int = 1, limit: int = 10, user_id: int = None):
+def get_posts_controller(page: int, limit: int, user_id: int | None, board_type: str, db: Session):
     """게시글 목록 조회 컨트롤러"""
     if page < 1:
         page = 1
     if limit < 1 or limit > 100:
         limit = 10
     
-    all_posts = list(POSTS.values())
-    total = len(all_posts)
+    offset = (page - 1) * limit
     
-    # 최신순 정렬 (ID 역순)
-    sorted_posts = sorted(all_posts, key=lambda x: x.id, reverse=True)
+    # Total count
+    total = db.query(func.count(Post.id)).filter(Post.board_type == board_type).scalar()
     
-    # 페이지네이션
-    start = (page - 1) * limit
-    end = start + limit
-    paginated_posts = sorted_posts[start:end]
+    # Query posts
+    posts = db.query(Post).filter(Post.board_type == board_type)\
+        .order_by(Post.created_at.desc())\
+        .offset(offset).limit(limit).all()
     
     posts_data = []
-    for post in paginated_posts:
-        user = USERS.get(post.user_id)
-        comment_count = len([c for c in COMMENTS.values() if c.post_id == post.id])
+    for post in posts:
+        # User is loaded via relationship or we can join. 
+        # Accessing post.user triggers lazy load if not joined.
+        # For list, better to use joinedload, but for now lazy is fine for small limit.
         
-        # 좋아요 여부 확인
+        comment_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post.id).scalar()
+        
         liked = False
-        if user_id and post.id in LIKES:
-            liked = user_id in LIKES[post.id]
+        if user_id:
+            like_exists = db.query(PostLike).filter(
+                PostLike.post_id == post.id, 
+                PostLike.user_id == user_id
+            ).first()
+            if like_exists:
+                liked = True
         
         posts_data.append({
             "post_id": post.id,
             "user_id": post.user_id,
-            "nickname": user.nickname if user else "알 수 없음",
+            "nickname": post.user.nickname if post.user else "알 수 없음",
             "title": post.title,
             "content": post.content,
             "image_url": post.image_url,
+            "board_type": post.board_type,
+            "tags": [t.name for t in post.tags],
+            "summary": post.summary,
+            "sentiment_label": post.sentiment_label,
             "like_count": post.like_count,
             "view_count": post.view_count,
             "comment_count": comment_count,
@@ -86,37 +128,41 @@ def get_posts_controller(page: int = 1, limit: int = 10, user_id: int = None):
     }
 
 
-def get_post_controller(post_id: int, user_id: int = None):
+def get_post_controller(post_id: int, user_id: int | None, db: Session):
     """게시글 상세 조회 컨트롤러"""
-    post = POSTS.get(post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
     
-    user = USERS.get(post.user_id)
-    comments = [c for c in COMMENTS.values() if c.post_id == post.id]
+    liked = False
+    if user_id:
+        like_exists = db.query(PostLike).filter(
+            PostLike.post_id == post_id, 
+            PostLike.user_id == user_id
+        ).first()
+        if like_exists:
+            liked = True
     
-    # 댓글 정보 포함
     comments_data = []
-    for comment in comments:
-        comment_user = USERS.get(comment.user_id)
+    for comment in post.comments:
         comments_data.append({
             "comment_id": comment.id,
             "user_id": comment.user_id,
-            "nickname": comment_user.nickname if comment_user else "알 수 없음",
+            "nickname": comment.user.nickname if comment.user else "알 수 없음",
             "content": comment.content
         })
-    
-    liked = False
-    if user_id and post_id in LIKES:
-        liked = user_id in LIKES[post_id]
     
     return {
         "post_id": post.id,
         "user_id": post.user_id,
-        "nickname": user.nickname if user else "알 수 없음",
+        "nickname": post.user.nickname if post.user else "알 수 없음",
         "title": post.title,
         "content": post.content,
         "image_url": post.image_url,
+        "board_type": post.board_type,
+        "tags": [t.name for t in post.tags],
+        "summary": post.summary,
+        "sentiment_label": post.sentiment_label,
         "like_count": post.like_count,
         "view_count": post.view_count,
         "liked": liked,
@@ -124,14 +170,14 @@ def get_post_controller(post_id: int, user_id: int = None):
     }
 
 
-def update_post_controller(post_id: int, req: PostUpdateReq, user_id: int):
+def update_post_controller(post_id: int, req: PostUpdateReq, user_id: int, db: Session):
     """게시글 수정 컨트롤러"""
     if not req or all(
         field is None for field in (req.title, req.content, req.image_url)
     ):
         raise bad_request("invalid_request")
 
-    post = POSTS.get(post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
     
@@ -148,61 +194,67 @@ def update_post_controller(post_id: int, req: PostUpdateReq, user_id: int):
     if req.image_url is not None:
         post.image_url = str(req.image_url)
     
+    db.commit()
     return {"post_id": post_id}
 
 
-def delete_post_controller(post_id: int, user_id: int):
+def delete_post_controller(post_id: int, user_id: int, db: Session):
     """게시글 삭제 컨트롤러"""
-    post = POSTS.get(post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
     
     if post.user_id != user_id:
         raise forbidden()
     
-    # 관련 댓글 삭제
-    comments_to_delete = [cid for cid, c in COMMENTS.items() if c.post_id == post_id]
-    for cid in comments_to_delete:
-        COMMENTS.pop(cid, None)
-    
-    # 좋아요 정보 삭제
-    LIKES.pop(post_id, None)
-    
-    POSTS.pop(post_id, None)
+    db.delete(post)
+    db.commit()
     return {"post_id": post_id}
 
 
-def toggle_like_controller(post_id: int, user_id: int):
+def toggle_like_controller(post_id: int, user_id: int, db: Session):
     """좋아요 토글 컨트롤러"""
-    post = POSTS.get(post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
     
-    LIKES.setdefault(post_id, set())
+    existing_like = db.query(PostLike).filter(
+        PostLike.post_id == post_id,
+        PostLike.user_id == user_id
+    ).first()
     
-    if user_id in LIKES[post_id]:
-        LIKES[post_id].remove(user_id)
+    liked = False
+    if existing_like:
+        db.delete(existing_like)
         liked = False
     else:
-        LIKES[post_id].add(user_id)
+        new_like = PostLike(post_id=post_id, user_id=user_id)
+        db.add(new_like)
         liked = True
     
-    post.like_count = len(LIKES[post_id])
+    db.commit()
+    
+    # Update like count
+    count = db.query(func.count(PostLike.id)).filter(PostLike.post_id == post_id).scalar()
+    post.like_count = count
+    db.commit()
     
     return {
         "post_id": post_id,
-        "like_count": post.like_count,
+        "like_count": count,
         "liked": liked
     }
 
 
-def increment_view_controller(post_id: int):
+def increment_view_controller(post_id: int, db: Session):
     """조회수 증가 컨트롤러"""
-    post = POSTS.get(post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
     
     post.view_count += 1
+    db.commit()
+    
     return {
         "post_id": post_id,
         "view_count": post.view_count
@@ -258,4 +310,3 @@ async def upload_post_image_controller(file_content_type: str, file_data: bytes,
         result["prediction_error"] = prediction_error  # 에러 정보 포함 (디버깅용)
     
     return result
-

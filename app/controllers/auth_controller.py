@@ -1,32 +1,30 @@
+from sqlalchemy.orm import Session
 from app.schemas import LoginReq, SignupReq
 from app.core.validators import validate_email, validate_password_pair, validate_nickname
 from app.core.exceptions import bad_request, conflict
-from app.models.memory import USERS, USERS_BY_EMAIL, USERS_BY_NICK, COUNTERS, User
+from app.models.user import User
 
 
-def login_controller(req: LoginReq):
+def login_controller(req: LoginReq, db: Session):
     """로그인 컨트롤러"""
     validate_email(req.email)
     
-    uid = USERS_BY_EMAIL.get(req.email)
-    if not uid:
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user:
         raise bad_request("invalid_credentials")
     
-    u = USERS[uid]
-    if u.password != req.password:
+    if user.password != req.password:
         raise bad_request("invalid_credentials")
     
     return {
-        "user_id": u.id,
-        "nickname": u.nickname,
-        "profile_image_url": u.profile_image_url
+        "user_id": user.id,
+        "nickname": user.nickname,
+        "profile_image_url": user.profile_image_url
     }
 
 
-def signup_controller(req: SignupReq):
+def signup_controller(req: SignupReq, db: Session):
     """회원가입 컨트롤러"""
-    from app.core.exceptions import bad_request
-    
     validate_email(req.email)
     validate_password_pair(req.password, req.password_check)
     validate_nickname(req.nickname)
@@ -35,25 +33,20 @@ def signup_controller(req: SignupReq):
     if not req.profile_image_url:
         raise bad_request("profile_image_url_required")
 
-    if req.email in USERS_BY_EMAIL:
+    if db.query(User).filter(User.email == req.email).first():
         raise conflict("duplicate_email")
-    if req.nickname in USERS_BY_NICK:
+    if db.query(User).filter(User.nickname == req.nickname).first():
         raise conflict("duplicate_nickname")
 
-    uid = COUNTERS["user"]
-    COUNTERS["user"] += 1
-    
     user = User(
-        id=uid,
         email=req.email,
         password=req.password,
         nickname=req.nickname,
         profile_image_url=str(req.profile_image_url)
     )
     
-    USERS[uid] = user
-    USERS_BY_EMAIL[req.email] = uid
-    USERS_BY_NICK[req.nickname] = uid
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     
-    return {"user_id": uid}
-
+    return {"user_id": user.id}

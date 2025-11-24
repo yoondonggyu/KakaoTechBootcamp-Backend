@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 import socket
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import httpx
 
@@ -180,3 +180,39 @@ async def chat_with_model(message: str, model: str = "gemma3:4b") -> Optional[st
         print(f"⚠️ 채팅 API 호출 실패: {e}")
         return None
 
+
+async def summarize_text(text: str) -> Optional[Dict[str, Any]]:
+    """
+    요약 API 호출
+    """
+    base_url = get_model_api_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{base_url}/summarize",
+                json={"text": text}
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"⚠️ 요약 API 호출 실패: {e}")
+        return None
+
+
+async def auto_tag_text(text: str) -> Optional[List[str]]:
+    """
+    자동 태깅 API 호출
+    """
+    base_url = get_model_api_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{base_url}/auto-tag",
+                json={"text": text}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("tags", [])
+    except Exception as e:
+        print(f"⚠️ 자동 태깅 API 호출 실패: {e}")
+        return []

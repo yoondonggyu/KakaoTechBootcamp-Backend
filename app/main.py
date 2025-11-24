@@ -62,3 +62,7 @@ async def handle_validation_error(_: Request, exc: RequestValidationError):
 async def handle_unexpected(_: Request, exc: Exception):
     """예상치 못한 서버 내부 오류 처리"""
     return create_json_response(500, "internal_server_error", None)
+
+# Admin Page Setup
+from app.core.admin import setup_admin
+setup_admin(app)
