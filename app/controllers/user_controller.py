@@ -30,7 +30,7 @@ def upload_profile_image_controller(file_content_type: str, file_data: bytes, fi
         f.write(file_data)
     
     # TODO: Replace with actual CDN or static file serving URL
-    url = f"https://cdn.example.com/{name}"
+    url = f"http://localhost:8000/uploads/{name}"
     return {"profile_image_url": url}
 
 

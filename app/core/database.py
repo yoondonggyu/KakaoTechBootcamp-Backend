@@ -1,14 +1,17 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
-# TODO: Use environment variables for security
-# SQLALCHEMY_DATABASE_URL = "mysql+pymysql://user:password@localhost/FASTAPI_Project_DB"
-# For local development (assuming root with no password for now, user can update)
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:971201jcy!@localhost:3306/FASTAPI_Project_DB"
+# Load environment variables
+load_dotenv()
+
+# Database URL from environment variable
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:password@localhost:3306/FASTAPI_Project_DB")
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
+    DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=3600,
 )

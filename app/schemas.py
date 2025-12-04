@@ -30,12 +30,14 @@ class PostCreateReq(BaseModel):
     title: str = Field(..., max_length=2000)
     content: str
     image_url: HttpUrl | None = None
+    image_class: str | None = None  # 이미지 분류 결과 (Dog/Cat)
     board_type: str = "couple"
 
 class PostUpdateReq(BaseModel):
     title: str | None = None
     content: str | None = None
     image_url: HttpUrl | None = None
+    image_class: str | None = None
 
 # Comments
 class CommentCreateReq(BaseModel):

@@ -29,7 +29,7 @@ async def get_post(
     db: Session = Depends(get_db)
 ):
     """게시글 상세 조회 API (로그인 선택)"""
-    data = post_controller.get_post_controller(post_id, x_user_id, db)
+    data = await post_controller.get_post_controller(post_id, x_user_id, db)
     return {"message": "get_post_success", "data": data}
 
 

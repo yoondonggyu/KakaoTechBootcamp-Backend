@@ -11,6 +11,7 @@ class UserAdmin(ModelView, model=User):
 class PostAdmin(ModelView, model=Post):
     column_list = [Post.id, Post.title, Post.user_id, Post.board_type, Post.created_at]
     column_searchable_list = [Post.title, Post.content]
+    form_columns = [Post.title, Post.content, Post.user, Post.board_type, Post.image_url, Post.tags]
 
 class CommentAdmin(ModelView, model=Comment):
     column_list = [Comment.id, Comment.content, Comment.user_id, Comment.post_id]

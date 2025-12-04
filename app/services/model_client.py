@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, List
 
 import httpx
 
-_CANDIDATE_PORTS = [8002, 8001, 8003, 8082, 8502, 8000]
+_CANDIDATE_PORTS = [8001, 8002, 8003, 8082, 8502, 8000]
 _MODEL_API_BASE_URL: Optional[str] = None
 
 

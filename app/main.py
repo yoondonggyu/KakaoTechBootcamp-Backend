@@ -1,11 +1,30 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.routers import auth_routes, user_routes, post_routes, comment_routes
 from app.core.exceptions import APIError
 from app.core.formatter import create_json_response
+import os
+
+# uploads 폴더 생성
+UPLOAD_DIR = os.path.abspath("./uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="Community API")
+
+# 업로드 폴더를 static으로 서빙
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 루트 경로
 @app.get("/")

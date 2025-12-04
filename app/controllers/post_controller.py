@@ -53,6 +53,7 @@ async def create_post_controller(req: PostCreateReq, user_id: int, db: Session):
         title=req.title,
         content=req.content,
         image_url=str(req.image_url) if req.image_url else None,
+        image_class=req.image_class,  # 이미지 분류 결과 저장
         board_type=req.board_type,
         tags=db_tags,
         summary=summary,
@@ -110,6 +111,7 @@ def get_posts_controller(page: int, limit: int, user_id: int | None, board_type:
             "title": post.title,
             "content": post.content,
             "image_url": post.image_url,
+            "image_class": post.image_class,
             "board_type": post.board_type,
             "tags": [t.name for t in post.tags],
             "summary": post.summary,
@@ -128,11 +130,29 @@ def get_posts_controller(page: int, limit: int, user_id: int | None, board_type:
     }
 
 
-def get_post_controller(post_id: int, user_id: int | None, db: Session):
+async def get_post_controller(post_id: int, user_id: int | None, db: Session):
     """게시글 상세 조회 컨트롤러"""
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("post_not_found")
+    
+    # 이미지가 있는데 image_class가 없으면 분류 수행
+    if post.image_url and not post.image_class:
+        try:
+            # 로컬 파일에서 이미지 읽기
+            if "localhost:8000/uploads/" in post.image_url:
+                filename = post.image_url.split("/uploads/")[-1]
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                if os.path.exists(file_path):
+                    with open(file_path, "rb") as f:
+                        file_data = f.read()
+                    prediction = await predict_image(file_data, filename)
+                    if prediction:
+                        post.image_class = prediction.get("class_name")
+                        db.commit()
+                        print(f"✅ 기존 이미지 분류 완료: {post.image_class}")
+        except Exception as e:
+            print(f"⚠️ 기존 이미지 분류 실패: {e}")
     
     liked = False
     if user_id:
@@ -159,6 +179,7 @@ def get_post_controller(post_id: int, user_id: int | None, db: Session):
         "title": post.title,
         "content": post.content,
         "image_url": post.image_url,
+        "image_class": post.image_class,
         "board_type": post.board_type,
         "tags": [t.name for t in post.tags],
         "summary": post.summary,
@@ -166,7 +187,8 @@ def get_post_controller(post_id: int, user_id: int | None, db: Session):
         "like_count": post.like_count,
         "view_count": post.view_count,
         "liked": liked,
-        "comments": comments_data
+        "comments": comments_data,
+        "created_at": post.created_at.isoformat() if post.created_at else None
     }
 
 
@@ -277,7 +299,7 @@ async def upload_post_image_controller(file_content_type: str, file_data: bytes,
     with open(file_path, "wb") as f:
         f.write(file_data)
     
-    url = f"https://cdn.example.com/{name}"
+    url = f"http://localhost:8000/uploads/{name}"
     
     # 🎯 Model API 호출 (이미지 분류) - 비동기로 처리
     prediction_result = None
